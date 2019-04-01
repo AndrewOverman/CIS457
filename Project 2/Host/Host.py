@@ -18,7 +18,7 @@ def serverInit(user, hostname, port):
     authorizer.add_anonymous(os.getcwd(), perm="elradfmwMT")
     handler = FTPHandler
     handler.authorizer = authorizer
-    server = ThreadedFTPServer(hostname, port, handler)
+    server = ThreadedFTPServer((hostname, port), handler)
     server.serve_forever()
     return user
 
@@ -35,5 +35,8 @@ def connect(hostname, port):
 
 
 def main():
-    serverSetup = input("Enter username, hostname, and port - [USERNAME] [HOSTNAME] [PORT]").split()
+    serverSetup = input("Enter username, hostname, and port - [USERNAME] [HOSTNAME] [PORT]\n").split()
     serverInit(serverSetup[0], serverSetup[1], serverSetup[2])
+
+
+main()
