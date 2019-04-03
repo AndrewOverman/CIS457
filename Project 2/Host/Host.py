@@ -110,11 +110,11 @@ def download(file, hostname, port):
     chunks = []
     while total > 0:
         chunk = sock.recv(4096)
-        chunks.append(pickle.loads(chunk))
+        chunks.append(chunk)
         total -= len(chunk)
     data = b''.join(chunks)
     file_output = open(file.split()[0], "wb")
-    file_output.write(data)
+    file_output.write(pickle.loads(data))
     file_output.close()
 
 
