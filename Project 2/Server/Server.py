@@ -1,91 +1,104 @@
-import pickle
 import socket
+import pickle
+import time
+
 from threading import Thread
 
 cache = []
 
 
 class ClientThread(Thread):
+    global cache
+
     def __init__(self, conn):
         Thread.__init__(self)
-        self.conn = conn
-        print("Thread created with IP: %s PORT: %s" % (self.conn.getsockname()[0], self.conn.getsockname()[1]))
+        self.connection = conn
+        print("Thread created with IP: %s PORT: %s" %
+              (self.connection.getpeername()[0], self.connection.getpeername()[1]))
 
-    # Send command TCP socket of data
-    # First packet contains length of data
     def send(self, msg):
         message = pickle.dumps(msg)
+        length = pickle.dumps(len(message))
+        print("Sending data of size %s to client at %s" % (len(message), self.connection.getpeername()))
         total = 0
-        self.conn.send(pickle.dumps(len(message)))
+        self.connection.send(length)
+        time.sleep(1)
         while total < len(message):
-            sent = self.conn.send(message)
+            sent = self.connection.send(message[total:])
             if sent == 0:
-                raise RuntimeError("socket connection broken")
+                raise RuntimeError("Socket connection broken")
             total += sent
 
-    # Receive command for TCP socket of data
-    # First packet contains length of data
     def receive(self):
         chunks = []
-        total = pickle.loads(self.conn.recv(4096))
-        print("Receiving data of size %s from client at %s" % (total, self.conn.getsockname()))
+        total = pickle.loads(self.connection.recv(4096))
+        print("Receiving data of size %s from client at %s" % (total, self.connection.getpeername()))
         while total > 0:
-            chunk = self.conn.recv(4096)
+            data = self.connection.recv(4096)
+            chunk = pickle.loads(data)
             chunks.append(chunk)
-            total -= len(chunk)
-        data = []
-        for item in chunks:
-            data.append(pickle.loads(item))
-        return b''.join(data)
+            total -= len(data)
+        return ''.join(chunks)
+
+    def update_cache(self):
+        total = pickle.loads(self.connection.recv(4096))
+        print("Receiving host contents of size %s from client at %s" % (total, self.connection.getpeername()))
+        data = self.connection.recv(4096)
+        host_cache = pickle.loads(data)
+        for item in host_cache:
+            cache.append(item + " " + self.connection.getpeername()[0] + " " + str(self.connection.getpeername()[1]))
+        print("Updated cache with %s" % host_cache)
+        print("Current cache %s" % cache)
+
+    def search(self, keyword):
+        searched = []
+        for file in cache:
+            if (file.split())[0] == keyword:
+                searched.append(file)
+        if len(searched) == 0:
+            return "NO_FILES_FOUND"
+        return searched
+
+    def retrieve(self, keyword):
+        for file in cache:
+            if (file.split())[0] == keyword:
+                return file
+        return "FILE_NOT_FOUND"
 
     def run(self):
-        files = self.receive()
-        print("Cache updated with data %s " % files)
-        if len(files) > 0:
-            for file in files:
-                cache.append(file)
-        print("Cache updated with data %s " % files)
-        searched_files = []
+        self.update_cache()
         while True:
             data = self.receive().split()
             if data[0].upper() == "LIST":
-                self.send(pickle.dumps(cache))
+                print("Sending cache to %s " % self.connection.getpeername()[0])
+                self.send(cache)
             elif data[0].upper() == "SEARCH":
-                searched_files.clear()
-                for file in cache:
-                    search = file.split()
-                    if search[0] == data[1]:
-                        searched_files.append(file)
-                if len(searched_files) > 0:
-                    self.send(pickle.dumps(searched_files))
-                else:
-                    self.send(pickle.dumps("FILES NOT FOUND"))
+                print("Sending filtered cache to %s " % self.connection.getpeername()[0])
+                searched_files = self.search(data[1])
+                self.send(searched_files)
             elif data[0].upper() == "RETRIEVE":
-                for file in cache:
-                    search = file.split()
-                    if search[0] == data[1]:
-                        self.send(pickle.dumps(file))
-                    else:
-                        self.send(pickle.dumps("FILE NOT FOUND"))
+                self.send(self.retrieve(data[1]))
             elif data[0].upper() == "QUIT":
-                self.conn.shutdown()
-                self.conn.close()
-                return
+                print("Closing connection with %s " % self.connection.getpeername()[0])
+                temp_cache = []
+                for item in cache:
+                    if int(item.split()[2]) == int(self.connection.getpeername()[1]):
+                        temp_cache.append(item)
+                self.connection.close()
+                for item in temp_cache:
+                    cache.remove(item)
+                break
 
 
 def server():
     server_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     server_sock.bind(('127.0.0.1', 3000))
     server_sock.listen(5)
-    print(server_sock.getsockname())
+    print("Cache server running on IP: %s PORT: %s" % server_sock.getsockname())
     while True:
         conn, address = server_sock.accept()
         client = ClientThread(conn)
         client.start()
 
 
-def main():
-    server()
-
-
-main()
+server()
